@@ -54,7 +54,9 @@ def process_cell_output_png(output):
 
 def process_cell_output_html(output):
     html = output.get('html', [])
-    return ''.join(html).strip()
+    html = ''.join(html).strip()
+    html = '\n\n<div class="ipynb-html">%s</div>\n\n' % html
+    return html
 
 def process_cell_output_text(output):
     text = output.get('text', [])
