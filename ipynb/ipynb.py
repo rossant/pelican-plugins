@@ -77,14 +77,14 @@ def process_cell(cell, options=None):
     if options is None:
         options = {}
     cell_type = cell.get('cell_type', None)
-    keep_input = options.get('keep_input', False)
+    keep_input = options.get('keep_input', True)
 
     if cell_type == 'markdown':
         return process_cell_markdown(cell)
     elif cell_type == 'heading':
         return process_cell_heading(cell)
     elif cell_type == 'code':
-        if options.get('keep_input', True):
+        if keep_input:
             return process_cell_input(cell) + process_cell_outputs(cell)
         else:
             return process_cell_outputs(cell)
@@ -102,7 +102,7 @@ def get_keep_input(filename):
     metadata = get_metadata(filename)
     r = re.search(r'keep_input[ ]*\:[ ]*([true|false]+)', metadata, flags=re.IGNORECASE)
     if r:
-        return bool(r.group(1).title())
+        return r.group(1).lower() == 'true'
     else:
         return True
 
@@ -116,7 +116,8 @@ class IPyNbReader(BaseReader):
         keep_input = get_keep_input(filename)
 
         # ipynb ==> md
-        mdcontents = nb_to_markdown(filename, options={'keep_input': keep_input})
+        mdcontents = '\n' + nb_to_markdown(filename, options={'keep_input': keep_input})
+        mdcontents = re.sub(r'(?<=\n)# ([^\n]+)\n', r'title: \1\n', mdcontents).strip()
 
         # md ==> html
         md_reader = MarkdownReader(self.settings)
