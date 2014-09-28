@@ -1,5 +1,6 @@
 import json
 import re
+from functools import partial
 
 from pelican import signals
 from pelican.readers import MarkdownReader, HTMLReader, BaseReader
@@ -7,8 +8,15 @@ from pelican.readers import MarkdownReader, HTMLReader, BaseReader
 try:
     import markdown
     from markdown import Markdown
+
+    from pygments import highlight
+    from pygments.lexers import PythonLexer
+    from pygments.formatters import HtmlFormatter
 except:
     Markdown = False
+
+def hl(code):
+    return highlight(code, PythonLexer(), HtmlFormatter())
 
 def get_metadata(filepath):
 
@@ -22,37 +30,66 @@ def get_metadata(filepath):
     metadata = ''.join(cell.get('source', [])) + '\n\n'
     return metadata
 
+def _indent_line(level=1, line=''):
+    return ' ' * (4*level) + line
+
+def process_cell_markdown(cell):
+    return ''.join(cell.get('source', [])) + '\n\n'
+
+def process_cell_heading(cell):
+    return cell.get('level', 0) * '#' + ' ' + ''.join(cell.get('source', [])) + '\n\n'
+
+def process_cell_input(cell):
+    input_lines = cell.get('input', [])
+    input_lines = map(partial(_indent_line, 0), input_lines)
+    code = ''.join(input_lines)
+    input_html = hl(code)
+    input_html = '\n\n<div class="ipynb-input">%s</div>\n\n' % input_html
+    return input_html
+
+def process_cell_output_png(output):
+    png = output.get('png', [])
+    if png:
+        return '\n\n<img src="data:image/png;base64,%s" />\n\n' % png.strip()
+
+def process_cell_output_html(output):
+    html = output.get('html', [])
+    return ''.join(html).strip()
+
+def process_cell_output_text(output):
+    text = output.get('text', [])
+    text = ''.join(text).strip()
+    if not text:
+        return ''
+    html = '\n\n<pre class="ipynb-output">%s</pre>\n\n' % text
+    return html
+
+def process_cell_output(output):
+    return (process_cell_output_html(output) or
+            process_cell_output_png(output) or
+            process_cell_output_text(output))
+
+def process_cell_outputs(cell):
+    outputs = cell.get('outputs', [])
+    return '\n\n'.join(map(process_cell_output, outputs))
+
 def process_cell(cell, options=None):
     if options is None:
         options = {}
     cell_type = cell.get('cell_type', None)
     keep_input = options.get('keep_input', False)
-    res = ''
+
     if cell_type == 'markdown':
-        res += ''.join(cell.get('source', [])) + '\n\n'
+        return process_cell_markdown(cell)
     elif cell_type == 'heading':
-        res += cell.get('level', 0) * '#' + ' ' + ''.join(cell.get('source', [])) + '\n\n'
+        return process_cell_heading(cell)
     elif cell_type == 'code':
         if options.get('keep_input', True):
-            c = cell.get('input', [])
-            c = ''.join(('    ' + l) for l in c)
-            res += c
-            res += '\n\n'
-        outputs = cell.get('outputs', [])
-        for output in outputs:
-            html = output.get('html', None)
-            png = output.get('png', None)
-            text = output.get('text', None)
-            if html:
-                res += '\n\n' + (''.join(html)).strip() + '\n\n'
-            elif png:
-                res += '<img src="data:image/png;base64,%s" />\n\n' % png.strip()
-            elif text:
-                res += ''.join(text) + '\n\n'
-    return res
+            return process_cell_input(cell) + process_cell_outputs(cell)
+        else:
+            return process_cell_outputs(cell)
 
 def nb_to_markdown(filepath, options=None):
-
     with open(filepath, "r") as f:
         nb = json.load(f)
 
@@ -61,6 +98,14 @@ def nb_to_markdown(filepath, options=None):
 
     return md
 
+def get_keep_input(filename):
+    metadata = get_metadata(filename)
+    r = re.search(r'keep_input[ ]*\:[ ]*([true|false]+)', metadata, flags=re.IGNORECASE)
+    if r:
+        return bool(r.group(1).title())
+    else:
+        return True
+
 
 class IPyNbReader(BaseReader):
     enabled = bool(Markdown)
@@ -68,11 +113,7 @@ class IPyNbReader(BaseReader):
     file_extensions = ['ipynb']
 
     def read(self, filename):
-
-        metadata = get_metadata(filename)
-        r = re.search(r'keep_input[ ]*\:[ ]*([true|false]+)', metadata, flags=re.IGNORECASE)
-        if r:
-            keep_input = bool(r.group(1).title())
+        keep_input = get_keep_input(filename)
 
         # ipynb ==> md
         mdcontents = nb_to_markdown(filename, options={'keep_input': keep_input})
