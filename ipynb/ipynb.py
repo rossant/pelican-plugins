@@ -55,6 +55,8 @@ def process_cell_output_png(output):
 def process_cell_output_html(output):
     html = output.get('html', [])
     html = ''.join(html).strip()
+    if not html:
+        return ''
     html = '\n\n<div class="ipynb-html">%s</div>\n\n' % html
     return html
 
@@ -123,7 +125,7 @@ class IPyNbReader(BaseReader):
 
         # md ==> html
         md_reader = MarkdownReader(self.settings)
-        md = Markdown(extensions=md_reader.extensions)
+        md = Markdown(lazy_ol=False, extensions=md_reader.extensions)
         html = md.convert(mdcontents)
         metadata = md_reader._parse_metadata(md.Meta)
 
