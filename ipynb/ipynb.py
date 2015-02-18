@@ -18,12 +18,19 @@ except:
 def hl(code):
     return highlight(code, PythonLexer(), HtmlFormatter())
 
+def get_worksheet(nb):
+    if 'worksheets' in nb:
+        ws = nb['worksheets'][0]
+    else:
+        ws = nb
+    return ws
+
 def get_metadata(filepath):
 
     with open(filepath, "r") as f:
         nb = json.load(f)
 
-    cells = nb['worksheets'][0]['cells']
+    cells = get_worksheet(nb)['cells']
 
     cell = cells[0]
     assert cell.get('cell_type', None) == 'markdown'
@@ -40,7 +47,7 @@ def process_cell_heading(cell):
     return cell.get('level', 0) * '#' + ' ' + ''.join(cell.get('source', [])) + '\n\n'
 
 def process_cell_input(cell):
-    input_lines = cell.get('input', [])
+    input_lines = cell.get('input', cell.get('source', []))
     input_lines = map(partial(_indent_line, 0), input_lines)
     code = ''.join(input_lines)
     input_html = hl(code)
@@ -64,7 +71,11 @@ def process_cell_output_text(output):
     text = output.get('text', [])
     text = ''.join(text).strip()
     if not text:
+        text = output.get('data', {}).get('text/plain', '')
+    if not text:
         return ''
+    if isinstance(text, list):
+        text = ''.join(text).strip()
     html = '\n\n<pre class="ipynb-output">%s</pre>\n\n' % text
     return html
 
@@ -97,7 +108,7 @@ def nb_to_markdown(filepath, options=None):
     with open(filepath, "r") as f:
         nb = json.load(f)
 
-    cells = nb['worksheets'][0]['cells']
+    cells = get_worksheet(nb)['cells']
     md = '\n'.join([process_cell(_, options) for _ in cells])
 
     return md
